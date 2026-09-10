@@ -1,0 +1,21 @@
+# Python
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/*.pyc
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+
+# IDE / OS
+.vscode/
+.DS_Store
+Thumbs.db

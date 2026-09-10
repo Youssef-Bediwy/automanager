@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: automanager-postgres
+    environment:
+      POSTGRES_DB: automanager
+      POSTGRES_USER: automanager_admin
+      POSTGRES_PASSWORD: automanager_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: automanager-backend
+    environment:
+      DATABASE_URL: postgresql://automanager_admin:automanager_password@postgres:5432/automanager
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
