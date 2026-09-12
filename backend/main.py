@@ -1,22 +1,27 @@
-from fastapi import FastAPI, Depends, HTTPException
+import os
+
+from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import engine, Base, SessionLocal
 from models import Vehicle
 from schemas import VehicleCreate, VehicleResponse
-from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI(
     title="AutoManager API",
     description="API de gestion des véhicules de MecaDrive",
-    version="1.1.0"
+    version="1.2.0"
 )
+
 
 origins = [
     "http://localhost:3000",
     "https://automanager-q84xx7t6x-youss-team.vercel.app",
 ]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,33 +31,98 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 Base.metadata.create_all(bind=engine)
+
 
 with engine.begin() as connection:
     connection.execute(
-        text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS image_url VARCHAR")
+        text(
+            "ALTER TABLE vehicles "
+            "ADD COLUMN IF NOT EXISTS image_url VARCHAR"
+        )
     )
 
 
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
     finally:
         db.close()
 
 
+def verify_admin_key(
+    x_admin_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("ADMIN_API_KEY")
+
+    if not expected_key:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_API_KEY is not configured"
+        )
+
+    if x_admin_key != expected_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized"
+        )
+
+
 @app.get("/")
 def home():
-    return {"message": "AutoManager API fonctionne"}
+    return {
+        "message": "AutoManager API fonctionne"
+    }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok"
+    }
 
 
-@app.post("/vehicles", response_model=VehicleResponse)
+@app.get(
+    "/vehicles",
+    response_model=list[VehicleResponse]
+)
+def get_vehicles(
+    db: Session = Depends(get_db)
+):
+    return db.query(Vehicle).all()
+
+
+@app.get(
+    "/vehicles/{vehicle_id}",
+    response_model=VehicleResponse
+)
+def get_vehicle(
+    vehicle_id: int,
+    db: Session = Depends(get_db)
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
+
+    if vehicle is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    return vehicle
+
+
+@app.post(
+    "/vehicles",
+    response_model=VehicleResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
 def create_vehicle(
     vehicle: VehicleCreate,
     db: Session = Depends(get_db)
@@ -74,34 +144,27 @@ def create_vehicle(
     return new_vehicle
 
 
-@app.get("/vehicles", response_model=list[VehicleResponse])
-def get_vehicles(db: Session = Depends(get_db)):
-    return db.query(Vehicle).all()
-
-
-@app.get("/vehicles/{vehicle_id}", response_model=VehicleResponse)
-def get_vehicle(
-    vehicle_id: int,
-    db: Session = Depends(get_db)
-):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
-
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-
-    return vehicle
-
-
-@app.put("/vehicles/{vehicle_id}", response_model=VehicleResponse)
+@app.put(
+    "/vehicles/{vehicle_id}",
+    response_model=VehicleResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
 def update_vehicle(
     vehicle_id: int,
     vehicle_data: VehicleCreate,
     db: Session = Depends(get_db)
 ):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
 
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
 
     vehicle.brand = vehicle_data.brand
     vehicle.model = vehicle_data.model
@@ -117,17 +180,29 @@ def update_vehicle(
     return vehicle
 
 
-@app.delete("/vehicles/{vehicle_id}")
+@app.delete(
+    "/vehicles/{vehicle_id}",
+    dependencies=[Depends(verify_admin_key)]
+)
 def delete_vehicle(
     vehicle_id: int,
     db: Session = Depends(get_db)
 ):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
 
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
 
     db.delete(vehicle)
     db.commit()
 
-    return {"message": "Vehicle deleted successfully"}
+    return {
+        "message": "Vehicle deleted successfully"
+    }
