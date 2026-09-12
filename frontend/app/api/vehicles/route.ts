@@ -44,3 +44,24 @@ export async function POST(request: Request) {
     },
   });
 }
+
+export async function GET() {
+  try {
+    const response = await fetch(
+      `${process.env.BACKEND_API_URL}/vehicles`,
+      { cache: "no-store" }
+    );
+
+    return new Response(await response.text(), {
+      status: response.status,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  } catch {
+    return Response.json(
+      { detail: "Backend inaccessible" },
+      { status: 502 }
+    );
+  }
+}
