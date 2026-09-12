@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 type Vehicle = {
   id: number;
@@ -10,6 +11,7 @@ type Vehicle = {
   year: number;
   mileage: number;
   status: string;
+  image_url?: string | null;
 };
 
 type VehicleForm = {
@@ -19,9 +21,10 @@ type VehicleForm = {
   year: string;
   mileage: string;
   status: string;
+  image_url: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
+const API_BASE_URL = "/api";
 
 const emptyForm: VehicleForm = {
   brand: "",
@@ -30,6 +33,7 @@ const emptyForm: VehicleForm = {
   year: "",
   mileage: "",
   status: "available",
+  image_url: "",
 };
 
 export default function Home() {
@@ -44,9 +48,6 @@ export default function Home() {
   const [form, setForm] = useState<VehicleForm>(emptyForm);
 
   function loadVehicles() {
-    setLoading(true);
-    setError("");
-
     fetch(`${API_BASE_URL}/vehicles`)
       .then((response) => {
         if (!response.ok) {
@@ -70,6 +71,12 @@ export default function Home() {
     loadVehicles();
   }, []);
 
+  function refreshVehicles() {
+    setLoading(true);
+    setError("");
+    loadVehicles();
+  }
+
   function resetForm() {
     setForm(emptyForm);
     setEditingVehicleId(null);
@@ -90,6 +97,7 @@ export default function Home() {
       year: String(vehicle.year),
       mileage: String(vehicle.mileage),
       status: vehicle.status,
+      image_url: vehicle.image_url ?? "",
     });
 
     setEditingVehicleId(vehicle.id);
@@ -111,6 +119,7 @@ export default function Home() {
       year: Number(form.year),
       mileage: Number(form.mileage),
       status: form.status,
+      image_url: form.image_url.trim() || null,
     };
 
     try {
@@ -139,7 +148,7 @@ export default function Home() {
       }
 
       resetForm();
-      loadVehicles();
+      refreshVehicles();
     } catch (err) {
       console.error(err);
       alert("Impossible de contacter l'API.");
@@ -169,7 +178,7 @@ export default function Home() {
         resetForm();
       }
 
-      loadVehicles();
+      refreshVehicles();
     } catch (err) {
       console.error(err);
       alert("Impossible de contacter l'API.");
@@ -370,6 +379,25 @@ export default function Home() {
                 <option value="maintenance">Maintenance</option>
               </select>
 
+              <div className="md:col-span-2">
+                <label htmlFor="image_url" className="mb-2 block text-sm font-semibold text-slate-600">
+                  URL de l’image (facultatif)
+                </label>
+                <input
+                  id="image_url"
+                  name="image_url"
+                  type="url"
+                  placeholder="https://exemple.com/vehicule.jpg"
+                  value={form.image_url}
+                  onChange={(event) => setForm({ ...form, image_url: event.target.value })}
+                  aria-describedby="image-url-help"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"
+                />
+                <p id="image-url-help" className="mt-2 text-sm text-slate-500">
+                  Une illustration de secours s’affiche si l’image est absente ou indisponible.
+                </p>
+              </div>
+
               <div className="flex flex-wrap gap-3 md:col-span-2">
                 <button
                   type="submit"
@@ -482,6 +510,11 @@ export default function Home() {
                 key={vehicle.id}
                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
+                <VehiclePhoto
+                  key={vehicle.image_url ?? ""}
+                  imageUrl={vehicle.image_url}
+                  label={`${vehicle.brand} ${vehicle.model}`}
+                />
                 <div className="mb-5 flex items-start justify-between">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-violet-100 text-2xl">
                     🚘
@@ -540,6 +573,46 @@ export default function Home() {
         </section>
       </div>
     </main>
+  );
+}
+
+function VehiclePhoto({ imageUrl, label }: { imageUrl?: string | null; label: string }) {
+  const [failed, setFailed] = useState(false);
+  let src: string | null = null;
+
+  try {
+    const url = new URL(imageUrl?.trim() ?? "");
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      src = url.href;
+    }
+  } catch {
+    // Missing or malformed URLs use the built-in illustration.
+  }
+
+  return (
+    <div className="relative mb-5 h-48 overflow-hidden rounded-2xl bg-gradient-to-br from-blue-100 to-violet-100">
+      {src && !failed ? (
+        <Image
+          src={src}
+          alt={`Photo de ${label}`}
+          fill
+          unoptimized
+          className="object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
+          <svg width="112" height="64" viewBox="0 0 112 64" fill="none" role="img" aria-label={`Illustration de secours pour ${label}`}>
+            <path d="M20 30 30 12h44l16 18M12 30h88v24H12z" fill="#c7d2fe" stroke="#6366f1" strokeWidth="3" strokeLinejoin="round" />
+            <path d="M36 18h15v12H29zm21 0h13l10 12H57z" fill="#eff6ff" />
+            <circle cx="30" cy="52" r="9" fill="#475569" />
+            <circle cx="82" cy="52" r="9" fill="#475569" />
+            <path d="M16 38h12m56 0h12" stroke="#fff" strokeWidth="5" />
+          </svg>
+          <span className="text-sm">Photo indisponible</span>
+        </div>
+      )}
+    </div>
   );
 }
 
