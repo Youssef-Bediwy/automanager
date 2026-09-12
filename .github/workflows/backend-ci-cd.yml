@@ -9,6 +9,10 @@ on:
       - ".github/workflows/backend-ci-cd.yml"
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   AWS_REGION: eu-west-1
   ECR_REPOSITORY: automanager-backend
@@ -58,11 +62,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/automanager_test
         run: pytest -v
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::911797456761:role/automanager-github-actions-role
+          role-session-name: AutoManagerGitHubActions
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -104,4 +108,4 @@ jobs:
           aws ecs wait services-stable             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"
 
       - name: Deployment completed
-        run: echo "Tests passed, Trivy scan passed, and AutoManager backend deployed successfully."
+        run: echo "OIDC authentication succeeded, tests passed, Trivy scan passed, and AutoManager backend deployed successfully."
