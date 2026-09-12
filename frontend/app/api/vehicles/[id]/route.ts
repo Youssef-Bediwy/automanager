@@ -1,12 +1,28 @@
+import { cookies } from "next/headers";
+import crypto from "crypto";
+
 const API_URL = process.env.BACKEND_API_URL!;
 
-type Params = {
-  params: Promise<{
-    id: string;
-  }>;
-};
+function validSession(session?: string) {
+  if (!session || !process.env.SESSION_SECRET) return false;
 
-export async function GET(request: Request, { params }: Params) {
+  const expected = crypto
+    .createHmac("sha256", process.env.SESSION_SECRET)
+    .update("automanager-admin")
+    .digest("hex");
+
+  return session === expected;
+}
+
+async function authorized() {
+  const cookieStore = await cookies();
+  return validSession(cookieStore.get("automanager_session")?.value);
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const { id } = await params;
 
   try {
@@ -14,72 +30,67 @@ export async function GET(request: Request, { params }: Params) {
       cache: "no-store",
     });
 
-    const data = await response.text();
-
-    return new Response(data, {
+    return new Response(await response.text(), {
       status: response.status,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
   } catch {
-    return Response.json(
-      { detail: "Backend unavailable" },
-      { status: 502 }
-    );
+    return Response.json({ detail: "Backend unavailable" }, { status: 502 });
   }
 }
 
-export async function PUT(request: Request, { params }: Params) {
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await authorized())) {
+    return Response.json({ detail: "Non autorisé" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   try {
-    const body = await request.text();
-
     const response = await fetch(`${API_URL}/vehicles/${id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
+        "X-Admin-Key": process.env.BACKEND_ADMIN_KEY!,
       },
-      body,
+      body: await request.text(),
     });
 
-    const data = await response.text();
-
-    return new Response(data, {
+    return new Response(await response.text(), {
       status: response.status,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
   } catch {
-    return Response.json(
-      { detail: "Backend unavailable" },
-      { status: 502 }
-    );
+    return Response.json({ detail: "Backend unavailable" }, { status: 502 });
   }
 }
 
-export async function DELETE(request: Request, { params }: Params) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await authorized())) {
+    return Response.json({ detail: "Non autorisé" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   try {
     const response = await fetch(`${API_URL}/vehicles/${id}`, {
       method: "DELETE",
-    });
-
-    const data = await response.text();
-
-    return new Response(data, {
-      status: response.status,
       headers: {
-        "Content-Type": "application/json",
+        "X-Admin-Key": process.env.BACKEND_ADMIN_KEY!,
       },
     });
+
+    return new Response(await response.text(), {
+      status: response.status,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch {
-    return Response.json(
-      { detail: "Backend unavailable" },
-      { status: 502 }
-    );
+    return Response.json({ detail: "Backend unavailable" }, { status: 502 });
   }
 }
