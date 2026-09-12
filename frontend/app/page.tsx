@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 type Vehicle = {
   id: number;
@@ -37,6 +38,45 @@ const emptyForm: VehicleForm = {
 };
 
 export default function Home() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/session", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Session indisponible");
+        return response.json();
+      })
+      .then((data) => { if (active) setIsAdmin(data.isAdmin === true); })
+      .catch(() => { if (active) setIsAdmin(false); })
+      .finally(() => { if (active) setSessionLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      const response = await fetch("/api/session", { method: "DELETE" });
+      if (!response.ok) throw new Error("Déconnexion refusée");
+      setIsAdmin(false);
+      resetForm();
+      window.location.assign("/");
+    } catch {
+      alert("Impossible de se déconnecter. Réessaie.");
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
+  function handleAccessError(response: Response) {
+    if (response.status !== 401 && response.status !== 403) return false;
+    setIsAdmin(false);
+    resetForm();
+    alert("Accès refusé. Reconnecte-toi. Si le problème persiste, vérifie la configuration des clés admin.");
+    return true;
+  }
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -67,6 +107,9 @@ export default function Home() {
       });
   }
 
+
+
+  
   useEffect(() => {
     loadVehicles();
   }, []);
@@ -84,12 +127,14 @@ export default function Home() {
   }
 
   function startCreate() {
+    if (!isAdmin) return;
     setForm(emptyForm);
     setEditingVehicleId(null);
     setShowForm(true);
   }
 
   function startEdit(vehicle: Vehicle) {
+    if (!isAdmin) return;
     setForm({
       brand: vehicle.brand,
       model: vehicle.model,
@@ -111,6 +156,7 @@ export default function Home() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!isAdmin) return;
 
     const payload = {
       brand: form.brand.trim(),
@@ -138,6 +184,7 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
 
+      if (handleAccessError(response)) return;
       if (!response.ok) {
         alert(
           editingVehicleId === null
@@ -156,6 +203,7 @@ export default function Home() {
   }
 
   async function deleteVehicle(id: number) {
+    if (!isAdmin) return;
     const confirmed = window.confirm(
       "Voulez-vous vraiment supprimer ce véhicule ?"
     );
@@ -169,6 +217,7 @@ export default function Home() {
         method: "DELETE",
       });
 
+      if (handleAccessError(response)) return;
       if (!response.ok) {
         alert("Erreur lors de la suppression du véhicule");
         return;
@@ -256,12 +305,32 @@ export default function Home() {
             </div>
           </div>
 
-          <button
-            onClick={startCreate}
-            className="rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-5 py-2.5 font-semibold text-white shadow-md transition hover:scale-[1.02]"
-          >
-            + Ajouter un véhicule
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {sessionLoading ? (
+              <span className="text-sm text-slate-500">Vérification de la session…</span>
+            ) : isAdmin ? (
+              <>
+                <span className="text-sm font-semibold text-blue-700">Admin connecté</span>
+                <button
+                  onClick={startCreate}
+                  className="rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-5 py-2.5 font-semibold text-white shadow-md transition hover:scale-[1.02]"
+                >
+                  + Ajouter un véhicule
+                </button>
+                <button
+                  onClick={logout}
+                  disabled={loggingOut}
+                  className="rounded-xl bg-slate-100 px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-50"
+                >
+                  {loggingOut ? "Déconnexion…" : "Déconnexion"}
+                </button>
+              </>
+            ) : (
+              <Link href="/login" className="rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white">
+                Connexion admin
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 
@@ -293,7 +362,7 @@ export default function Home() {
           </div>
         </section>
 
-        {showForm && (
+        {isAdmin && showForm && (
           <section className="mb-10 rounded-3xl bg-white p-7 shadow-xl">
             <div className="mb-6 flex flex-col justify-between gap-3 md:flex-row md:items-center">
               <div>
@@ -499,7 +568,7 @@ export default function Home() {
               <div className="mb-3 text-5xl">🚗</div>
               <h4 className="text-lg font-bold">Aucun véhicule trouvé</h4>
               <p className="mt-1 text-slate-500">
-                Ajoutez votre premier véhicule ou modifiez vos filtres.
+                {isAdmin ? "Ajoutez votre premier véhicule ou modifiez vos filtres." : "Aucun véhicule ne correspond à votre recherche."}
               </p>
             </div>
           )}
@@ -552,6 +621,7 @@ export default function Home() {
                   </div>
                 </div>
 
+                {isAdmin && (
                 <div className="flex gap-2">
                   <button
                     onClick={() => startEdit(vehicle)}
@@ -567,6 +637,7 @@ export default function Home() {
                     Supprimer
                   </button>
                 </div>
+                )}
               </article>
             ))}
           </div>
