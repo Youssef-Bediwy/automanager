@@ -13,11 +13,14 @@ app = FastAPI(
     version="1.1.0"
 )
 
+origins = [
+    "http://localhost:3000",
+    "https://automanager-q84xx7t6x-youss-team.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
