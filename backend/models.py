@@ -12,3 +12,4 @@ class Vehicle(Base):
     year = Column(Integer, nullable=False)
     mileage = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
+    image_url = Column(String, nullable=True)

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import engine, Base, SessionLocal
@@ -9,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(
     title="AutoManager API",
     description="API de gestion des véhicules de MecaDrive",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 app.add_middleware(
@@ -24,10 +25,14 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+with engine.begin() as connection:
+    connection.execute(
+        text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS image_url VARCHAR")
+    )
+
 
 def get_db():
     db = SessionLocal()
-
     try:
         yield db
     finally:
@@ -36,16 +41,12 @@ def get_db():
 
 @app.get("/")
 def home():
-    return {
-        "message": "AutoManager API fonctionne"
-    }
+    return {"message": "AutoManager API fonctionne"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
 @app.post("/vehicles", response_model=VehicleResponse)
@@ -59,7 +60,8 @@ def create_vehicle(
         registration=vehicle.registration,
         year=vehicle.year,
         mileage=vehicle.mileage,
-        status=vehicle.status
+        status=vehicle.status,
+        image_url=vehicle.image_url
     )
 
     db.add(new_vehicle)
@@ -82,10 +84,7 @@ def get_vehicle(
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
 
     if vehicle is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Vehicle not found"
-        )
+        raise HTTPException(status_code=404, detail="Vehicle not found")
 
     return vehicle
 
@@ -99,10 +98,7 @@ def update_vehicle(
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
 
     if vehicle is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Vehicle not found"
-        )
+        raise HTTPException(status_code=404, detail="Vehicle not found")
 
     vehicle.brand = vehicle_data.brand
     vehicle.model = vehicle_data.model
@@ -110,6 +106,7 @@ def update_vehicle(
     vehicle.year = vehicle_data.year
     vehicle.mileage = vehicle_data.mileage
     vehicle.status = vehicle_data.status
+    vehicle.image_url = vehicle_data.image_url
 
     db.commit()
     db.refresh(vehicle)
@@ -125,14 +122,9 @@ def delete_vehicle(
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
 
     if vehicle is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Vehicle not found"
-        )
+        raise HTTPException(status_code=404, detail="Vehicle not found")
 
     db.delete(vehicle)
     db.commit()
 
-    return {
-        "message": "Vehicle deleted successfully"
-    }
+    return {"message": "Vehicle deleted successfully"}

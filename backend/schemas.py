@@ -8,6 +8,7 @@ class VehicleCreate(BaseModel):
     year: int
     mileage: int
     status: str
+    image_url: str | None = None
 
 
 class VehicleResponse(VehicleCreate):
