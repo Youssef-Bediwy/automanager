@@ -1,51 +1,46 @@
-const API_URL = process.env.BACKEND_API_URL!;
+import { cookies } from "next/headers";
+import crypto from "crypto";
 
-export async function GET() {
-  try {
-    const response = await fetch(`${API_URL}/vehicles`, {
-      cache: "no-store",
-    });
+function validSession(session?: string) {
+  if (!session) return false;
 
-    const data = await response.text();
+  const expected = crypto
+    .createHmac("sha256", process.env.SESSION_SECRET!)
+    .update("automanager-admin")
+    .digest("hex");
 
-    return new Response(data, {
-      status: response.status,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-  } catch {
-    return Response.json(
-      { detail: "Backend unavailable" },
-      { status: 502 }
-    );
-  }
+  return session === expected;
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.text();
+  const cookieStore = await cookies();
+  const session = cookieStore.get("automanager_session")?.value;
 
-    const response = await fetch(`${API_URL}/vehicles`, {
+  if (!validSession(session)) {
+    return Response.json(
+      { detail: "Non autorisé" },
+      { status: 401 }
+    );
+  }
+
+  const body = await request.text();
+
+  const response = await fetch(
+    `${process.env.BACKEND_API_URL}/vehicles`,
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Admin-Key": process.env.BACKEND_ADMIN_KEY!,
       },
       body,
-    });
+    }
+  );
 
-    const data = await response.text();
-
-    return new Response(data, {
-      status: response.status,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-  } catch {
-    return Response.json(
-      { detail: "Backend unavailable" },
-      { status: 502 }
-    );
-  }
+  return new Response(await response.text(), {
+    status: response.status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
 }

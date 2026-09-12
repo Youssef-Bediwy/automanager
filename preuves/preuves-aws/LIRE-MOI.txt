@@ -1,0 +1,16 @@
+PREUVES AWS — AutoManager — 12 septembre 2026
+
+05-ecs-service.png : service actif, 1 tâche en cours sur 1 souhaitée, déploiement réussi.
+07-ecr-images.png : liste des images du dépôt automanager-backend.
+07b-ecr-image-details.png : dernière image, tag latest, digest, taille et résultat du scan ECR. Le scan signale 1 vulnérabilité élevée : ne pas présenter ce résultat comme une absence de vulnérabilités.
+08-cloudwatch-logs-health.png : journaux CloudWatch consultés depuis ECS, filtre /health sur 3 jours, réponses HTTP 200 OK.
+09-cloudwatch-metriques.png : métriques CloudWatch intégrées à ECS, CPUUtilization et MemoryUtilization.
+10-cloudwatch-alarmes.png : les deux alarmes sont en état OK.
+10b-alarme-cpu.png : CPUUtilization >= 70 %, 1 point de données sur une période de 5 minutes.
+10c-alarme-memoire.png : MemoryUtilization >= 80 %, 1 point de données sur une période de 5 minutes.
+Les deux alarmes affichent Aucune action. Ces preuves ne démontrent pas de notification par e-mail/SNS.
+RDS/ : captures originales précédentes et copies annotées. Accessible publiquement : Non ; port 5432 ; VPC, groupe de sous-réseaux et groupe de sécurité visibles.
+
+Aucune ressource AWS modifiée. Les originaux sont des captures du navigateur. Les fichiers RDS suffixés -annotee sont des copies annotées avec un outil de génération d’images ; conserver les originaux comme preuves de référence.
+
+Hors de cette collecte AWS : captures GitHub Actions (pipeline, tests, OIDC, Trivy), application (véhicules et formulaire), et Terraform, également évoqués dans le chat de préparation.

@@ -1,181 +1,193 @@
 import os
 
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/automanager_test",
+from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from database import engine, Base, SessionLocal
+from models import Vehicle
+from schemas import VehicleCreate, VehicleResponse
+
+
+app = FastAPI(
+    title="AutoManager API",
+    description="API de gestion des véhicules de MecaDrive",
+    version="1.2.0"
 )
 
-os.environ["ADMIN_API_KEY"] = "test-admin-key"
+origins = [
+    "http://localhost:3000",
+    "https://automanager-q84xx7t6x-youss-team.vercel.app",
+]
 
-from fastapi.testclient import TestClient
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-from database import Base, SessionLocal, engine
-from main import app
-from models import Vehicle
+Base.metadata.create_all(bind=engine)
+
+with engine.begin() as connection:
+    connection.execute(
+        text(
+            "ALTER TABLE vehicles "
+            "ADD COLUMN IF NOT EXISTS image_url VARCHAR"
+        )
+    )
 
 
-client = TestClient(app)
-
-ADMIN_HEADERS = {
-    "X-Admin-Key": "test-admin-key"
-}
-
-
-def setup_function():
-    Base.metadata.create_all(bind=engine)
-
+def get_db():
     db = SessionLocal()
-
     try:
-        db.query(Vehicle).delete()
-        db.commit()
+        yield db
     finally:
         db.close()
 
 
-def sample_vehicle():
+def verify_admin_key(
+    x_admin_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("ADMIN_API_KEY")
+
+    if not expected_key:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_API_KEY is not configured"
+        )
+
+    if x_admin_key != expected_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized"
+        )
+
+
+@app.get("/")
+def home():
+    return {"message": "AutoManager API fonctionne"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/vehicles", response_model=list[VehicleResponse])
+def get_vehicles(
+    db: Session = Depends(get_db)
+):
+    return db.query(Vehicle).all()
+
+
+@app.get("/vehicles/{vehicle_id}", response_model=VehicleResponse)
+def get_vehicle(
+    vehicle_id: int,
+    db: Session = Depends(get_db)
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
+
+    if vehicle is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    return vehicle
+
+
+@app.post(
+    "/vehicles",
+    response_model=VehicleResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
+def create_vehicle(
+    vehicle: VehicleCreate,
+    db: Session = Depends(get_db)
+):
+    new_vehicle = Vehicle(
+        brand=vehicle.brand,
+        model=vehicle.model,
+        registration=vehicle.registration,
+        year=vehicle.year,
+        mileage=vehicle.mileage,
+        status=vehicle.status,
+        image_url=vehicle.image_url
+    )
+
+    db.add(new_vehicle)
+    db.commit()
+    db.refresh(new_vehicle)
+
+    return new_vehicle
+
+
+@app.put(
+    "/vehicles/{vehicle_id}",
+    response_model=VehicleResponse,
+    dependencies=[Depends(verify_admin_key)]
+)
+def update_vehicle(
+    vehicle_id: int,
+    vehicle_data: VehicleCreate,
+    db: Session = Depends(get_db)
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
+
+    if vehicle is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    vehicle.brand = vehicle_data.brand
+    vehicle.model = vehicle_data.model
+    vehicle.registration = vehicle_data.registration
+    vehicle.year = vehicle_data.year
+    vehicle.mileage = vehicle_data.mileage
+    vehicle.status = vehicle_data.status
+    vehicle.image_url = vehicle_data.image_url
+
+    db.commit()
+    db.refresh(vehicle)
+
+    return vehicle
+
+
+@app.delete(
+    "/vehicles/{vehicle_id}",
+    dependencies=[Depends(verify_admin_key)]
+)
+def delete_vehicle(
+    vehicle_id: int,
+    db: Session = Depends(get_db)
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
+
+    if vehicle is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    db.delete(vehicle)
+    db.commit()
+
     return {
-        "brand": "Renault",
-        "model": "Clio V",
-        "registration": "TEST-001",
-        "year": 2022,
-        "mileage": 25000,
-        "status": "available",
-        "image_url": "https://example.com/clio.jpg",
-    }
-
-
-def test_home():
-    response = client.get("/")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "message": "AutoManager API fonctionne"
-    }
-
-
-def test_health():
-    response = client.get("/health")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok"
-    }
-
-
-def test_create_vehicle():
-    response = client.post(
-        "/vehicles",
-        json=sample_vehicle(),
-        headers=ADMIN_HEADERS,
-    )
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert data["id"] is not None
-    assert data["brand"] == "Renault"
-    assert data["registration"] == "TEST-001"
-    assert data["image_url"] == "https://example.com/clio.jpg"
-
-
-def test_get_vehicles():
-    client.post(
-        "/vehicles",
-        json=sample_vehicle(),
-        headers=ADMIN_HEADERS,
-    )
-
-    response = client.get("/vehicles")
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert len(data) == 1
-    assert data[0]["registration"] == "TEST-001"
-
-
-def test_get_vehicle_by_id():
-    created = client.post(
-        "/vehicles",
-        json=sample_vehicle(),
-        headers=ADMIN_HEADERS,
-    ).json()
-
-    response = client.get(
-        f"/vehicles/{created['id']}"
-    )
-
-    assert response.status_code == 200
-    assert response.json()["brand"] == "Renault"
-
-
-def test_update_vehicle():
-    created = client.post(
-        "/vehicles",
-        json=sample_vehicle(),
-        headers=ADMIN_HEADERS,
-    ).json()
-
-    updated_vehicle = {
-        "brand": "Renault",
-        "model": "Clio V",
-        "registration": "TEST-001",
-        "year": 2022,
-        "mileage": 30000,
-        "status": "rented",
-        "image_url": "https://example.com/clio-new.jpg",
-    }
-
-    response = client.put(
-        f"/vehicles/{created['id']}",
-        json=updated_vehicle,
-        headers=ADMIN_HEADERS,
-    )
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert data["mileage"] == 30000
-    assert data["status"] == "rented"
-    assert data["image_url"] == "https://example.com/clio-new.jpg"
-
-
-def test_delete_vehicle():
-    created = client.post(
-        "/vehicles",
-        json=sample_vehicle(),
-        headers=ADMIN_HEADERS,
-    ).json()
-
-    response = client.delete(
-        f"/vehicles/{created['id']}",
-        headers=ADMIN_HEADERS,
-    )
-
-    assert response.status_code == 200
-
-    assert response.json() == {
         "message": "Vehicle deleted successfully"
-    }
-
-    response_after_delete = client.get(
-        f"/vehicles/{created['id']}"
-    )
-
-    assert response_after_delete.status_code == 404
-
-
-def test_vehicle_not_found():
-    response = client.get(
-        "/vehicles/999999"
-    )
-
-    assert response.status_code == 404
-
-    assert response.json() == {
-        "detail": "Vehicle not found"
     }
