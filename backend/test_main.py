@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/automanager_test",
+    "postgresql+psycopg2://automanager_admin:automanager_password@localhost:5432/automanager_test",
 )
 
 os.environ["ADMIN_API_KEY"] = "test-admin-key"
@@ -178,4 +178,15 @@ def test_vehicle_not_found():
 
     assert response.json() == {
         "detail": "Vehicle not found"
+    }
+    
+def test_create_vehicle_without_admin_key():
+    response = client.post(
+        "/vehicles",
+        json=sample_vehicle(),
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Unauthorized"
     }
