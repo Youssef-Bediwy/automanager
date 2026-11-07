@@ -15,6 +15,10 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# =========================================================
+# VPC
+# =========================================================
+
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 
@@ -22,6 +26,10 @@ resource "aws_vpc" "main" {
     Name = "automanager-vpc"
   }
 }
+
+# =========================================================
+# SUBNET PUBLIC
+# =========================================================
 
 resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
@@ -32,6 +40,10 @@ resource "aws_subnet" "public" {
   }
 }
 
+# =========================================================
+# INTERNET GATEWAY
+# =========================================================
+
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -39,6 +51,10 @@ resource "aws_internet_gateway" "main" {
     Name = "automanager-igw"
   }
 }
+
+# =========================================================
+# ROUTE TABLE PUBLIQUE
+# =========================================================
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -57,6 +73,10 @@ resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
 }
+
+# =========================================================
+# SECURITY GROUP APPLICATION
+# =========================================================
 
 resource "aws_security_group" "app_sg" {
   name        = "automanager-app-sg"
@@ -79,14 +99,6 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  egress {
-    description = "Allow all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   ingress {
     description = "Allow FastAPI for testing"
     from_port   = 8000
@@ -95,10 +107,22 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = {
     Name = "automanager-app-sg"
   }
 }
+
+# =========================================================
+# SUBNETS PRIVES
+# =========================================================
 
 resource "aws_subnet" "private_a" {
   vpc_id            = aws_vpc.main.id
@@ -119,6 +143,10 @@ resource "aws_subnet" "private_b" {
     Name = "automanager-private-subnet-b"
   }
 }
+
+# =========================================================
+# SECURITY GROUP BASE DE DONNEES
+# =========================================================
 
 resource "aws_security_group" "db_sg" {
   name        = "automanager-db-sg"
@@ -145,6 +173,10 @@ resource "aws_security_group" "db_sg" {
   }
 }
 
+# =========================================================
+# DB SUBNET GROUP
+# =========================================================
+
 resource "aws_db_subnet_group" "main" {
   name = "automanager-db-subnet-group"
 
@@ -157,6 +189,10 @@ resource "aws_db_subnet_group" "main" {
     Name = "automanager-db-subnet-group"
   }
 }
+
+# =========================================================
+# RDS POSTGRESQL
+# =========================================================
 
 resource "aws_db_instance" "postgres" {
   identifier = "automanager-postgres"
@@ -189,6 +225,10 @@ resource "aws_db_instance" "postgres" {
   }
 }
 
+# =========================================================
+# ECR
+# =========================================================
+
 resource "aws_ecr_repository" "backend" {
   name                 = "automanager-backend"
   image_tag_mutability = "MUTABLE"
@@ -202,6 +242,10 @@ resource "aws_ecr_repository" "backend" {
   }
 }
 
+# =========================================================
+# ECS CLUSTER
+# =========================================================
+
 resource "aws_ecs_cluster" "main" {
   name = "automanager-cluster"
 
@@ -209,6 +253,10 @@ resource "aws_ecs_cluster" "main" {
     Name = "automanager-cluster"
   }
 }
+
+# =========================================================
+# ECS TASK EXECUTION ROLE
+# =========================================================
 
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "automanager-ecs-task-execution-role"
@@ -239,6 +287,10 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_role" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# =========================================================
+# CLOUDWATCH LOGS
+# =========================================================
+
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ecs/automanager-backend"
   retention_in_days = 7
@@ -247,6 +299,10 @@ resource "aws_cloudwatch_log_group" "backend" {
     Name = "automanager-backend-logs"
   }
 }
+
+# =========================================================
+# PERMISSIONS POUR LES SECRETS ECS
+# =========================================================
 
 resource "aws_iam_role_policy" "ecs_secrets" {
   name = "automanager-ecs-secrets"
@@ -263,11 +319,28 @@ resource "aws_iam_role_policy" "ecs_secrets" {
           "secretsmanager:GetSecretValue"
         ]
 
-        Resource = aws_db_instance.postgres.master_user_secret[0].secret_arn
+        Resource = [
+          aws_db_instance.postgres.master_user_secret[0].secret_arn
+        ]
+      },
+      {
+        Effect = "Allow"
+
+        Action = [
+          "ssm:GetParameters"
+        ]
+
+        Resource = [
+          "arn:aws:ssm:eu-west-1:911797456761:parameter/automanager/admin-api-key"
+        ]
       }
     ]
   })
 }
+
+# =========================================================
+# ECS TASK DEFINITION
+# =========================================================
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "automanager-backend"
@@ -315,9 +388,12 @@ resource "aws_ecs_task_definition" "backend" {
 
       secrets = [
         {
-          name = "DB_PASSWORD"
-
+          name      = "DB_PASSWORD"
           valueFrom = "${aws_db_instance.postgres.master_user_secret[0].secret_arn}:password::"
+        },
+        {
+          name      = "ADMIN_API_KEY"
+          valueFrom = "arn:aws:ssm:eu-west-1:911797456761:parameter/automanager/admin-api-key"
         }
       ]
 
@@ -337,6 +413,10 @@ resource "aws_ecs_task_definition" "backend" {
     Name = "automanager-backend-task"
   }
 }
+
+# =========================================================
+# ECS SERVICE
+# =========================================================
 
 resource "aws_ecs_service" "backend" {
   name            = "automanager-backend-service"
